@@ -1,0 +1,34 @@
+{
+  "training_date": "2025-11-16T19:46:43.797308",
+  "total_models": 4,
+  "models": [
+    {
+      "name": "resnet50_bert",
+      "best_f1": 0.6554621848739495,
+      "training_time_minutes": 3.622105062007904,
+      "total_params": 136433473,
+      "trainable_params": 112925441
+    },
+    {
+      "name": "resnet50_roberta",
+      "best_f1": 0.6411042944785276,
+      "training_time_minutes": 3.6186240514119468,
+      "total_params": 151596865,
+      "trainable_params": 128088833
+    },
+    {
+      "name": "efficientnet_distilbert",
+      "best_f1": 0.6081632653061225,
+      "training_time_minutes": 3.646293036142985,
+      "total_params": 71813757,
+      "trainable_params": 67806209
+    },
+    {
+      "name": "clip_finetuned",
+      "best_f1": 0.4862385321100917,
+      "training_time_minutes": 4.447813399632772,
+      "total_params": 151441666,
+      "trainable_params": 151441666
+    }
+  ]
+}
