@@ -23,9 +23,6 @@ from transformers import (
 import io
 import pytesseract
 from typing import Optional
-import json
-import os
-from pathlib import Path
 
 app = FastAPI(title="Hate Meme Detection API")
 
@@ -37,9 +34,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Metrics directory path
-METRICS_DIR = Path(__file__).parent.parent / "metrics"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -195,36 +189,36 @@ class CLIPBasedModel(nn.Module):
 # Model Loading
 # ============================================================================
 
-MODEL_CONFIGS = {                                       # change paths as needed
+MODEL_CONFIGS = {
     "resnet50_bert": {
         "class": ResNetBERTModel,
         "args": ["bert-base-uncased"],
         "tokenizer": BertTokenizer.from_pretrained("bert-base-uncased"),
-        "path": "",
+        "path": "./resnet50_bert.pt",
     },
     "resnet50_roberta": {
         "class": ResNetBERTModel,
         "args": ["roberta-base"],
         "tokenizer": RobertaTokenizer.from_pretrained("roberta-base"),
-        "path": "",
+        "path": "./resnet50_roberta.pt",
     },
     "vit_bert": {
         "class": ViTBERTModel,
         "args": [],
         "tokenizer": BertTokenizer.from_pretrained("bert-base-uncased"),
-        "path": "",
+        "path": "./vit_bert.pt",
     },
     "efficientnet_distilbert": {
         "class": EfficientNetDistilBERTModel,
         "args": [],
         "tokenizer": DistilBertTokenizer.from_pretrained("distilbert-base-uncased"),
-        "path": "",
+        "path": "./efficientnet_distilbert.pt",
     },
     "clip_finetuned": {
         "class": CLIPBasedModel,
         "args": [],
         "tokenizer": CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32"),
-        "path": "",
+        "path": "./clip_finetuned.pt",
     },
 }
 
@@ -243,18 +237,13 @@ def load_model(model_name: str):
     model = config["class"](*config["args"]).to(DEVICE)
 
     try:
-        # Load state dict with strict=False to ignore missing position_ids
-        state_dict = torch.load(config["path"], map_location=DEVICE)
-        model.load_state_dict(state_dict, strict=False)
+        model.load_state_dict(torch.load(config["path"], map_location=DEVICE))
         model.eval()
         loaded_models[model_name] = model
         print(f"✓ Loaded model: {model_name}")
         return model
     except FileNotFoundError:
         print(f"⚠ Model file not found: {config['path']}")
-        return None
-    except Exception as e:
-        print(f"⚠ Failed to load {model_name}: {e}")
         return None
 
 
@@ -291,129 +280,16 @@ async def root():
 
 @app.get("/models")
 async def list_models():
-    """List all available models with their metrics"""
-    models_with_metrics = []
-    
-    for name in MODEL_CONFIGS.keys():
-        metrics_file = METRICS_DIR / f"{name}_metrics.json"
-        metrics = None
-        
-        if metrics_file.exists():
-            try:
-                with open(metrics_file, 'r') as f:
-                    data = json.load(f)
-                    # Get best epoch metrics
-                    best_epoch = max(data['epochs'], key=lambda x: x.get('f1_score', 0))
-                    metrics = {
-                        "accuracy": round(best_epoch['val_accuracy'] * 100, 2),
-                        "precision": round(best_epoch['precision'] * 100, 2),
-                        "recall": round(best_epoch['recall'] * 100, 2),
-                        "f1_score": round(best_epoch['f1_score'] * 100, 2),
-                        "best_epoch": best_epoch['epoch'],
-                        "total_epochs": len(data['epochs']),
-                    }
-            except Exception as e:
-                print(f"Error loading metrics for {name}: {e}")
-        
-        models_with_metrics.append({
-            "id": name,
-            "name": name.replace('_', ' ').title(),
-            "loaded": name in loaded_models,
-            "metrics": metrics,
-        })
-    
-    return {"models": models_with_metrics}
-
-
-@app.get("/models/{model_name}/metrics")
-async def get_model_metrics(model_name: str):
-    """Get detailed metrics for a specific model"""
-    metrics_file = METRICS_DIR / f"{model_name}_metrics.json"
-    
-    if not metrics_file.exists():
-        return {"error": f"Metrics not found for model: {model_name}"}
-    
-    try:
-        with open(metrics_file, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        return {"error": f"Failed to load metrics: {str(e)}"}
-
-
-@app.get("/training/summary")
-async def get_training_summary():
-    """Get training summary for all models"""
-    summary = {
-        "models": [],
-        "best_model": None,
-        "total_training_time": 0,
-    }
-    
-    best_f1 = 0
-    
-    for model_name in MODEL_CONFIGS.keys():
-        metrics_file = METRICS_DIR / f"{model_name}_metrics.json"
-        
-        if metrics_file.exists():
-            try:
-                with open(metrics_file, 'r') as f:
-                    data = json.load(f)
-                    best_epoch = max(data['epochs'], key=lambda x: x.get('f1_score', 0))
-                    
-                    model_summary = {
-                        "name": model_name,
-                        "accuracy": round(best_epoch['val_accuracy'] * 100, 2),
-                        "f1_score": round(best_epoch['f1_score'] * 100, 2),
-                        "precision": round(best_epoch['precision'] * 100, 2),
-                        "recall": round(best_epoch['recall'] * 100, 2),
-                        "training_time": data.get('training_time_seconds', 0),
-                        "epochs": len(data['epochs']),
-                        "history": [
-                            {
-                                "epoch": e['epoch'],
-                                "train_loss": e['train_loss'],
-                                "val_loss": e['val_loss'],
-                                "train_accuracy": e['train_accuracy'],
-                                "val_accuracy": e['val_accuracy'],
-                            }
-                            for e in data['epochs']
-                        ]
-                    }
-                    
-                    summary['models'].append(model_summary)
-                    summary['total_training_time'] += data.get('training_time_seconds', 0)
-                    
-                    if best_epoch['f1_score'] > best_f1:
-                        best_f1 = best_epoch['f1_score']
-                        summary['best_model'] = model_name
-            except Exception as e:
-                print(f"Error loading summary for {model_name}: {e}")
-    
-    return summary
-
-
-@app.get("/dataset/stats")
-async def get_dataset_stats():
-    """Get dataset statistics"""
-    # This is a placeholder - you can customize based on your dataset
+    """List all available models"""
     return {
-        "total_samples": 1700,
-        "train_samples": 1360,
-        "val_samples": 340,
-        "test_samples": 0,
-        "class_distribution": {
-            "hateful": 250,
-            "not_hateful": 250,
-        },
-        "data_sources": {
-            "Twitter": 450,
-            "Facebook": 380,
-            "Reddit": 320,
-            "Instagram": 280,
-            "Other": 270,
-        },
-        "images_with_text": 1420,
-        "avg_words_per_image": 8.5,
+        "models": [
+            {
+                "id": name,
+                "loaded": name in loaded_models,
+                "description": MODEL_CONFIGS[name].get("description", ""),
+            }
+            for name in MODEL_CONFIGS.keys()
+        ]
     }
 
 
