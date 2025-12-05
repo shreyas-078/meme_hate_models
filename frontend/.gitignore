@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+README_NEW.md
+SETUP_GUIDE.md      
+TAILWIND_FIX.md

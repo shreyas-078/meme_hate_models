@@ -6,5 +6,7 @@ models/
 
 frontend/node_modules/
 
+backend/metrics_api.py
+
 .DS_Store
 images/
